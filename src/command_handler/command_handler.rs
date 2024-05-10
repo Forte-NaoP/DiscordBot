@@ -42,6 +42,8 @@ impl CommandList {
 lazy_static! {
     pub static ref COMMAND_LIST: CommandList = CommandList {
         commands: HashMap::from([
+            ("join", connect::command()),
+            ("leave", disconnect::command()),
         ])
     };
 }
