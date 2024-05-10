@@ -4,10 +4,10 @@ use serenity::{
     UserId
 };
 
-use crate::command_handler::{
+use crate::{command_handler::{
         command_handler::*,
         command_return::CommandReturn,
-    };
+    }, connection_handler::establish_connection};
 
 use std::collections::HashMap;
 
@@ -25,32 +25,8 @@ impl CommandInterface for Connect {
         command: &CommandInteraction, 
         _options: &[CommandDataOption]
     ) -> CommandReturn {
-        let (guild_id, channel_id) = {
-            let guild_id = command.guild_id.unwrap();
-            let voice_states: &HashMap<UserId, VoiceState> = &guild_id
-                .to_guild_cached(ctx)
-                .unwrap()
-                .voice_states;
-            let channel_id = voice_states
-                .get(&command.user.id)
-                .and_then(|voice_state| voice_state.channel_id);
-            (guild_id, channel_id)
-        };
-
-        let connect_to = match channel_id {
-            Some(channel) => channel,
-            None => {
-                return CommandReturn::String("음성채널에 먼저 접속해주세요.".to_owned())
-            },
-        };
-
-        let manager = songbird::get(ctx)
-            .await
-            .expect("Songbird Voice client placed in at initialisation.")
-            .clone();
-
-        match manager.join(guild_id, connect_to).await {
-            Ok(_) => CommandReturn::String("접속".to_owned()),
+        match establish_connection(ctx, command).await {
+            Ok(res) => CommandReturn::String("접속".to_owned()),
             Err(why) => CommandReturn::String(format!("{:?}", why))
         }
     }

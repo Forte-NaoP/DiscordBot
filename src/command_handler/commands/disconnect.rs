@@ -3,10 +3,10 @@ use serenity::{
     async_trait, CreateCommand, Context, CommandInteraction, CommandDataOption
 };
 
-use crate::command_handler::{
+use crate::{command_handler::{
         command_handler::*,
         command_return::CommandReturn,
-    };
+    }, connection_handler::terminate_connection};
 
 struct DisConnect;
 
@@ -22,18 +22,7 @@ impl CommandInterface for DisConnect {
         command: &CommandInteraction, 
         _options: &[CommandDataOption]
     ) -> CommandReturn {
-        let guild_id = command.guild_id.unwrap();
-        let manager = songbird::get(ctx)
-            .await
-            .expect("Songbird Voice client placed in at initialisation.");
-
-        let handler_lock = manager.get(guild_id).expect("Guild Not Found");
-        handler_lock
-            .lock()
-            .await
-            .leave()
-            .await
-            .expect("Disconnect Fail");
+        terminate_connection(ctx, command).await;
         CommandReturn::String("접속 종료".to_owned())
     }
 

@@ -7,6 +7,8 @@ use serenity::model::prelude::GatewayIntents;
 
 mod event_handler;
 mod command_handler;
+mod connection_handler;
+mod utils;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
