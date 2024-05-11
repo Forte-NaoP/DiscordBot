@@ -3,7 +3,7 @@ use serenity::{
     async_trait, CreateCommand, Context, CommandInteraction, CommandDataOption, 
     CreateCommandOption, CommandOptionType
 };
-use songbird::input::{Compose, YoutubeDl};
+use songbird::input::{Compose, File, YoutubeDl};
 
 use crate::{
     command_handler::{
@@ -11,7 +11,7 @@ use crate::{
         command_return::CommandReturn,
     }, 
     connection_handler::*, 
-    utils::url_checker::url_checker, HttpKey,
+    utils::{url_checker::url_checker, youtube_dl::ytdl_optioned}, HttpKey,
 };
 
 use std::collections::HashMap;
@@ -45,27 +45,24 @@ impl CommandInterface for Play {
             .and_then(url_checker)
             .unwrap();
 
+        let start = options.get(1)
+            .and_then(|option| option.value.as_i64())
+            .unwrap_or(0);
+        let duration = options.get(2)
+            .and_then(|option| option.value.as_i64())
+            .unwrap_or(0);
+
         let guild_id = command.guild_id.unwrap();
         let manager = songbird::get(ctx).await.unwrap();
 
-        let http_client = {
-            let data = ctx.data.read().await;
-            data.get::<HttpKey>()
-                .cloned()
-                .unwrap()
-        };
-        
         if let Some(handler_lock) = manager.get(guild_id) {
             let mut handler = handler_lock.lock().await;
-
-            let mut src = YoutubeDl::new(http_client, url);
-            let title = {
-                let metadata = src.aux_metadata().await.unwrap();
-                metadata.title.unwrap()
-            };    
+   
+            let (path, title) = ytdl_optioned(&url, start, duration).await.unwrap();
+            let mut src = File::new(path);
             let _ = handler.play_input(src.into());
 
-            CommandReturn::String(format!("{} 재생중", title))
+            CommandReturn::String(format!("{:?} 재생중", title))
         } else {
             CommandReturn::String("재생 실패".to_owned())
         }
@@ -84,6 +81,22 @@ impl CommandInterface for Play {
                     "youtube url"
                 );
                 option.required(true)
+            })
+            .add_option({
+                let option = CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "start",
+                    "start from"
+                );
+                option
+            })
+            .add_option({
+                let option = CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "duration",
+                    "play how long"
+                );
+                option
             })
     }
 }
