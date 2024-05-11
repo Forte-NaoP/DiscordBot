@@ -1,9 +1,11 @@
 use serenity::FutureExt;
-use songbird::SerenityInit;
+use songbird::{typemap::TypeMapKey, SerenityInit};
 use tokio::signal::ctrl_c;
 
 use poise::serenity_prelude as serenity_poise;
 use serenity::model::prelude::GatewayIntents;
+
+use reqwest::Client as HttpClient;
 
 mod event_handler;
 mod command_handler;
@@ -13,6 +15,11 @@ mod utils;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 pub struct Data {}
+
+struct HttpKey;
+impl TypeMapKey for HttpKey {
+    type Value = HttpClient;
+}
 
 #[tokio::main]
 async fn main() {
@@ -30,6 +37,7 @@ async fn main() {
 
     let mut client = serenity_poise::ClientBuilder::new(token, intents)
         .event_handler(event_handler::event_handler::DiscordEventHandler)
+        .type_map_insert::<HttpKey>(HttpClient::new())
         .register_songbird()
         .await
         .expect("Error creating client");
