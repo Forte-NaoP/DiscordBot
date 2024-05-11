@@ -4,10 +4,12 @@ use serenity::{
     UserId
 };
 
-use songbird::error::JoinError;
+use songbird::{error::JoinError, TrackEvent};
 use tokio::time::error::Elapsed;
 
 use std::collections::HashMap;
+
+use crate::event_handler::track_event_handler::TrackEndNotifier;
 
 #[derive(Debug)]
 pub enum ConnectionErrorCode {
@@ -62,7 +64,11 @@ pub async fn establish_connection(ctx: &Context, command: &CommandInteraction) -
             }
         } else {
             match manager.join(guild_id, user_channel).await {
-                Ok(_) => Ok(ConnectionSuccessCode::NewConnection),
+                Ok(handler_lock) => {
+                    let mut handler = handler_lock.lock().await;
+                    handler.add_global_event(TrackEvent::End.into(), TrackEndNotifier);
+                    Ok(ConnectionSuccessCode::NewConnection)
+                },
                 Err(why) => Err(ConnectionErrorCode::JoinError(why))
             }
         }
