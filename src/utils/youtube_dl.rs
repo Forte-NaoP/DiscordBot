@@ -19,11 +19,11 @@ const FFMPEG_COMMAND: &str = "ffmpeg";
 const TMP_FOLDER: &str = "./target/tmp/";
 // "yt-dlp "https://www.youtube.com/watch?v=KIiO7rGnW6I&list=PLy8FIz514mc8kUd6irZ3_djzblgBmuajc&index=129" -f "ba[abr>0][vcodec=none]/best" --no-playlist --downloader ffmpeg --downloader-args ffmpeg:"-ss 30 -t 30""
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Output {
     pub artist: Option<String>,
     pub album: Option<String>,
-    pub duration: Option<f64>,
+    pub duration: Option<i64>,
     pub filesize: Option<u64>,
     pub title: Option<String>,
     pub track: Option<String>,
@@ -34,7 +34,7 @@ pub struct Output {
 
 pub async fn ytdl_optioned(
     url: &String, mut start: i64, mut duration: i64
-) -> Result<(String, Option<String>), AudioStreamError> {
+) -> Result<(String, Output), AudioStreamError> {
     let mut ytdl_output = format!("{TMP_FOLDER}{url}.%(ext)s");
     let ytdl_args = [
         "-j",
@@ -77,15 +77,15 @@ pub async fn ytdl_optioned(
         .collect::<Result<Vec<Output>, _>>()
         .map_err(|e| AudioStreamError::Fail(Box::new(e)))?;
 
-    let meta = out
+    let mut meta = out
         .first()
         .ok_or_else(|| {
             AudioStreamError::Fail(format!("no results found for '{url}'").into())
-        })?;
+        }).unwrap().clone();
     ytdl_output = format!("{TMP_FOLDER}{url}.{}", meta.audio_ext.as_ref().unwrap());
 
     if duration == 0 {
-        Ok((ytdl_output, meta.title.to_owned()))
+        Ok((ytdl_output, meta))
     } else {
         let ffmpeg_output = format!("{TMP_FOLDER}{url}_cut.{}", meta.audio_ext.as_ref().unwrap());
         let ffmpeg_args = [
@@ -110,7 +110,8 @@ pub async fn ytdl_optioned(
                     Box::new(e)
                 })
             })?;
-        Ok((ffmpeg_output, meta.title.to_owned()))
+        meta.duration = Some(duration);
+        Ok((ffmpeg_output, meta))
     }
 
 }

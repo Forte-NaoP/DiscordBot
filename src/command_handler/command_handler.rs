@@ -1,13 +1,17 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use poise::serenity_prelude as serenity;
 use serenity::{
     async_trait,
     GuildId,
-    CreateCommand, CommandInteraction, CommandDataOption, EditInteractionResponse, Context
+    builder::*,
+    CreateCommand, CommandInteraction, CommandDataOption, EditInteractionResponse, Context,
+    CreateInteractionResponse, CreateEmbed
 };
 
 use lazy_static::lazy_static;
+use songbird::tracks::PlayMode;
 
 use crate::command_handler::{ command_return::*, commands::* };
 
@@ -49,7 +53,7 @@ lazy_static! {
     };
 }
 
-pub async fn execute_command(ctx: &serenity::Context, command: CommandInteraction) {
+pub async fn execute_command(ctx: Arc<serenity::Context>, command: CommandInteraction) {
 
     command.defer(&ctx.http).await.unwrap();
     let cmd_result = match COMMAND_LIST.commands.get(command.data.name.as_str()) {
@@ -87,6 +91,54 @@ pub async fn execute_command(ctx: &serenity::Context, command: CommandInteractio
                 );
                 println!("{:#?}", why);
             }
+        }
+        CommandReturn::SongInfoEmbed(handle, meta) => {
+            if let Err(why) = command
+                .edit_response(&ctx.http, {
+                    EditInteractionResponse::new()
+                        .content("재생 시작")
+                })
+                .await
+            {
+                println!(
+                    "Failed to send Single-string from command \"{}\".",
+                    command.data.name
+                );
+                println!("{:#?}", why);
+            };
+            let title = meta.title.clone().unwrap_or("제목 없음".to_owned());
+            let duration = meta.duration.clone().unwrap_or(0);
+            let info = handle.get_info().await.unwrap();
+            let embed = CreateEmbed::new()
+                .title(&title)
+                .description(format!("{}:{} / {}:{}", 
+                    info.play_time.as_secs() / 60, info.play_time.as_secs() % 60,
+                    duration / 60, duration % 60));
+            let mut msg = command.channel_id.send_message(
+                &ctx.http,
+                CreateMessage::new().embed(embed.clone()))
+                .await
+                .unwrap();
+
+            tokio::spawn(async move {
+                while let Ok(info) = handle.get_info().await {
+                    if info.playing == PlayMode::Stop {
+                        println!("{} stopped", &title);
+                        break;
+                    }
+                    let embed = CreateEmbed::new()
+                        .title(title.as_str())
+                        .description(format!("{}:{} / {}:{}", 
+                            info.play_time.as_secs() / 60, info.play_time.as_secs() % 60,
+                            duration / 60, duration % 60));
+                    if let Err(e) = msg.edit(&ctx.http, EditMessage::new().embed(embed)).await {
+                        println!("Failed to update message: {:?}", e);
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                } 
+            });
+            
+            
         }
         CommandReturn::ControlInteraction(mut pages) => {          
             if let Err(why) = pages.control_interaction(ctx, command).await {

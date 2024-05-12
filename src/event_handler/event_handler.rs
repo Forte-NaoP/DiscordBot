@@ -6,6 +6,8 @@ use crate::command_handler::{
     commands::*,
 };
 
+use std::sync::Arc;
+
 pub struct DiscordEventHandler;
 
 #[async_trait]
@@ -29,7 +31,7 @@ impl EventHandler for DiscordEventHandler {
         match interaction {
             Interaction::Command(command) => match command.data.name.as_str() {
                 "launch" => launch::run(&ctx, command).await,
-                _ => execute_command(&ctx, command).await,
+                _ => execute_command(Arc::new(ctx), command).await,
             },
             _ => {},
         };

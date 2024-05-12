@@ -58,11 +58,10 @@ impl CommandInterface for Play {
         if let Some(handler_lock) = manager.get(guild_id) {
             let mut handler = handler_lock.lock().await;
    
-            let (path, title) = ytdl_optioned(&url, start, duration).await.unwrap();
-            let mut src = File::new(path);
-            let _ = handler.play_input(src.into());
-
-            CommandReturn::String(format!("{:?} 재생중", title))
+            let (path, meta) = ytdl_optioned(&url, start, duration).await.unwrap();
+            let src = File::new(path);
+            let handle = handler.play_input(src.into());
+            CommandReturn::SongInfoEmbed(handle, meta)
         } else {
             CommandReturn::String("재생 실패".to_owned())
         }
