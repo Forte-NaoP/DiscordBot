@@ -4,19 +4,15 @@ use songbird::input::{
     AuxMetadata,
     File,
 };
+
 use serde::{Deserialize, Serialize};
-use serenity::async_trait;
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Client,
-};
-use std::{path::Path, error::Error, io::ErrorKind, collections::HashMap};
-use symphonia::core::io::MediaSource;
+use std::io::ErrorKind;
 use tokio::process::Command;
+
+use crate::global::*;
 
 const YOUTUBE_DL_COMMAND: &str = "yt-dlp";
 const FFMPEG_COMMAND: &str = "ffmpeg";
-const TMP_FOLDER: &str = "./target/tmp/";
 // "yt-dlp "https://www.youtube.com/watch?v=KIiO7rGnW6I&list=PLy8FIz514mc8kUd6irZ3_djzblgBmuajc&index=129" -f "ba[abr>0][vcodec=none]/best" --no-playlist --downloader ffmpeg --downloader-args ffmpeg:"-ss 30 -t 30""
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -33,9 +29,9 @@ pub struct Output {
 }
 
 pub async fn ytdl_optioned(
-    url: &String, mut start: i64, mut duration: i64
+    url: &String, start: i64, duration: i64
 ) -> Result<(String, Output), AudioStreamError> {
-    let mut ytdl_output = format!("{TMP_FOLDER}{url}.%(ext)s");
+    let mut ytdl_output = format!("{TARGET}{TMP}{url}.%(ext)s");
     let ytdl_args = [
         "-j",
         "--no-simulate",
@@ -82,12 +78,12 @@ pub async fn ytdl_optioned(
         .ok_or_else(|| {
             AudioStreamError::Fail(format!("no results found for '{url}'").into())
         }).unwrap().clone();
-    ytdl_output = format!("{TMP_FOLDER}{url}.{}", meta.audio_ext.as_ref().unwrap());
+    ytdl_output = format!("{TARGET}{TMP}{url}.{}", meta.audio_ext.as_ref().unwrap());
 
     if duration == 0 {
         Ok((ytdl_output, meta))
     } else {
-        let ffmpeg_output = format!("{TMP_FOLDER}{url}_cut.{}", meta.audio_ext.as_ref().unwrap());
+        let ffmpeg_output = format!("{TARGET}{TMP}{url}_cut.{}", meta.audio_ext.as_ref().unwrap());
         let ffmpeg_args = [
             "-y",
             "-i",
