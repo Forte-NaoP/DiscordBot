@@ -134,7 +134,7 @@ pub async fn execute_command(ctx: Arc<serenity::Context>, command: CommandIntera
                     if let Err(e) = msg.edit(&ctx.http, EditMessage::new().embed(embed)).await {
                         println!("Failed to update message: {:?}", e);
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 } 
             });
             
