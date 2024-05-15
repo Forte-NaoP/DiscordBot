@@ -4,12 +4,12 @@ use serenity::{
     UserId
 };
 
-use songbird::{error::JoinError, TrackEvent};
+use songbird::{error::JoinError, tracks::TrackQueue, TrackEvent};
 use tokio::time::error::Elapsed;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use crate::event_handler::track_event_handler::TrackEndNotifier;
+use crate::{event_handler::track_event_handler::TrackEndNotifier, GuildQueueKey};
 
 #[derive(Debug)]
 pub enum ConnectionErrorCode {
@@ -47,14 +47,11 @@ pub async fn establish_connection(ctx: &Context, command: &CommandInteraction) -
 
         if let Some(call) = manager.get(guild_id) {
             let mut call = call.lock().await;
-            if let Some(connection_info) = call.current_connection() {
-                match connection_info.channel_id {
-                    Some(bot_channel) => if bot_channel == user_channel.into() {
-                        Ok(ConnectionSuccessCode::AlreadyConnected)
-                    } else {
-                        Err(ConnectionErrorCode::AlreadyInUse)
-                    },
-                    None => Err(ConnectionErrorCode::ServerNotFound)
+            if let Some(bot_channel) = call.current_channel() {
+                if bot_channel == user_channel.into() {
+                    Ok(ConnectionSuccessCode::AlreadyConnected)
+                } else {
+                    Err(ConnectionErrorCode::AlreadyInUse)
                 }
             } else {
                 match call.join(user_channel).await {
@@ -65,6 +62,11 @@ pub async fn establish_connection(ctx: &Context, command: &CommandInteraction) -
         } else {
             match manager.join(guild_id, user_channel).await {
                 Ok(handler_lock) => {
+                    let guild_queue_map = {
+                        let data_read = ctx.data.read().await;
+                        data_read.get::<GuildQueueKey>().unwrap().clone()
+                    };
+                    guild_queue_map.insert(guild_id.clone(), Arc::new(TrackQueue::new()));
                     let mut handler = handler_lock.lock().await;
                     handler.add_global_event(TrackEvent::End.into(), TrackEndNotifier);
                     Ok(ConnectionSuccessCode::NewConnection)

@@ -1484,6 +1484,7 @@ name = "quiz_bot"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
+ "dashmap",
  "lazy_static",
  "poise",
  "rand",

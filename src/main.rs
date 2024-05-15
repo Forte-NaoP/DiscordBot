@@ -1,5 +1,7 @@
-use serenity::FutureExt;
-use songbird::{typemap::TypeMapKey, SerenityInit};
+use std::sync::Arc;
+
+use serenity::{all::GuildId, FutureExt};
+use songbird::{typemap::TypeMapKey, SerenityInit, tracks::TrackQueue};
 use tokio::signal::ctrl_c;
 
 use poise::serenity_prelude as serenity_poise;
@@ -7,10 +9,13 @@ use serenity::model::prelude::GatewayIntents;
 
 use reqwest::Client as HttpClient;
 
+use dashmap::DashMap;
+
 mod event_handler;
 mod command_handler;
 mod connection_handler;
 mod utils;
+mod global;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -19,6 +24,11 @@ pub struct Data {}
 struct HttpKey;
 impl TypeMapKey for HttpKey {
     type Value = HttpClient;
+}
+
+struct GuildQueueKey;
+impl TypeMapKey for GuildQueueKey {
+    type Value = Arc<DashMap<GuildId, Arc<TrackQueue>>>;
 }
 
 #[tokio::main]
@@ -38,6 +48,7 @@ async fn main() {
     let mut client = serenity_poise::ClientBuilder::new(token, intents)
         .event_handler(event_handler::event_handler::DiscordEventHandler)
         .type_map_insert::<HttpKey>(HttpClient::new())
+        .type_map_insert::<GuildQueueKey>(Arc::new(DashMap::new()))
         .register_songbird()
         .await
         .expect("Error creating client");
