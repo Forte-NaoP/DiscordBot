@@ -1,25 +1,37 @@
+use lazy_static::lazy_static;
 use poise::serenity_prelude as serenity;
 use serenity::{
     async_trait, CreateCommand, Context, CommandInteraction, CommandDataOption, 
-    CreateCommandOption, CommandOptionType
+    CreateCommandOption, CommandOptionType, GuildId
 };
-use songbird::input::{Compose, File, YoutubeDl};
+use songbird::{
+    input::{File, Input},
+    tracks::TrackQueue,
+};
 
 use crate::{
+    global::*,
     command_handler::{
         command_handler::*,
         command_return::CommandReturn,
-    }, 
-    connection_handler::*, 
-    utils::{url_checker::url_checker, youtube_dl::ytdl_optioned}, HttpKey,
+    }, connection_handler::*, utils::{url_checker::url_checker, youtube_dl::ytdl_optioned}, GuildQueueKey, HttpKey
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Read, path::PathBuf, sync::Arc};
 
 struct Play;
 
 pub fn command() -> Box<dyn CommandInterface + Sync + Send> {
     Box::new(Play)
+}
+
+lazy_static! {
+    static ref INTERVAL: Vec<u8> = {
+        let mut f = std::fs::File::open(format!("{TARGET}{NO_SOUND}")).unwrap();
+        let mut buffer = Vec::new();
+        f.read_to_end(&mut buffer).unwrap();
+        buffer
+    };
 }
 
 #[async_trait]
@@ -45,22 +57,36 @@ impl CommandInterface for Play {
             .and_then(url_checker)
             .unwrap();
 
-        let start = options.get(1)
-            .and_then(|option| option.value.as_i64())
-            .unwrap_or(0);
-        let duration = options.get(2)
-            .and_then(|option| option.value.as_i64())
-            .unwrap_or(0);
+        // start와 duration이 선택값이라 start를 빼고 duration만 넣으면 
+        // start 변수에 duration 옵션의 값이 들어가는 문제가 있음
+        let (start, duration) = match (options.get(1), options.get(2)) {
+            (Some(s), Some(d)) => (s.value.as_i64().unwrap(), d.value.as_i64().unwrap()),
+            (Some(s), None) => if s.name == "start" {
+                (s.value.as_i64().unwrap(), 0)
+            } else {
+                (0, s.value.as_i64().unwrap())
+            },
+            _ => (0, 0),
+        };
 
         let guild_id = command.guild_id.unwrap();
-        let manager = songbird::get(ctx).await.unwrap();
 
+        let guild_queue = {
+            let guild_queue_map = {
+                let data_read = ctx.data.read().await;
+                data_read.get::<GuildQueueKey>().unwrap().clone()
+            };
+            let guild_queue = guild_queue_map.get(&guild_id).unwrap().clone();
+            guild_queue
+        };
+
+        let manager = songbird::get(ctx).await.unwrap().clone();
         if let Some(handler_lock) = manager.get(guild_id) {
-            let mut handler = handler_lock.lock().await;
-   
             let (path, meta) = ytdl_optioned(&url, start, duration).await.unwrap();
             let src = File::new(path);
-            let handle = handler.play_input(src.into());
+            let mut handler = handler_lock.lock().await;
+            let handle = guild_queue.add_source(src.into(), &mut handler).await;
+            guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), &mut handler).await;
             CommandReturn::SongInfoEmbed(handle, meta)
         } else {
             CommandReturn::String("재생 실패".to_owned())
