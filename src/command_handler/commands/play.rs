@@ -59,17 +59,34 @@ impl CommandInterface for Play {
             .and_then(url_checker)
             .unwrap();
 
-        // start와 duration이 선택값이라 start를 빼고 duration만 넣으면 
-        // start 변수에 duration 옵션의 값이 들어가는 문제가 있음
-        let (start, duration) = match (options.get(1), options.get(2)) {
-            (Some(s), Some(d)) => (s.value.as_i64().unwrap(), d.value.as_i64().unwrap()),
-            (Some(s), None) => if s.name == "start" {
-                (s.value.as_i64().unwrap(), 0)
-            } else {
-                (0, s.value.as_i64().unwrap())
-            },
-            _ => (0, 0),
-        };
+        let mut start = 0;
+        let mut duration = 0;
+        let mut skip = None;
+
+        for option in &options[1..] {
+            match option.name.as_str() {
+                "start" => {
+                    start = match option.value.as_i64() {
+                        Some(value) if value > 0 => value,
+                        _ => 0,
+                    }
+                },
+                "duration" => {
+                    duration = match option.value.as_i64() {
+                        Some(value) if value > 0 => value,
+                        _ => 0,
+                    }
+                },
+                "skip" => {
+                    skip = match option.value.as_str() {
+                        Some(value) => Some(value.to_owned()),
+                        _ => None,
+                    }
+                },
+                _ => {}
+            }
+        }
+
 
         let guild_id = command.guild_id.unwrap();
         let guild_queue = get_guild_queue(ctx, guild_id).await;
@@ -79,7 +96,10 @@ impl CommandInterface for Play {
             let (path, meta) = ytdl_optioned(&url, start, duration).await.unwrap();
             let src = File::new(path);
             let mut handler = handler_lock.lock().await;
-            let handle = guild_queue.add_source(src.into(), &mut handler).await;
+            let handle = match skip {
+                Some(skip) => guild_queue.add_source_with_word(src.into(), skip, &mut handler).await,
+                None => guild_queue.add_source(src.into(), &mut handler).await,
+            };
             guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), &mut handler).await;
             CommandReturn::SongInfoEmbed(handle, meta)
         } else {
@@ -114,6 +134,14 @@ impl CommandInterface for Play {
                     CommandOptionType::Integer,
                     "duration",
                     "play how long"
+                );
+                option
+            })
+            .add_option({
+                let option = CreateCommandOption::new(
+                    CommandOptionType::String,
+                    "skip",
+                    "keyword for skip the song"
                 );
                 option
             })
