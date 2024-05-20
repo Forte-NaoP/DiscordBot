@@ -1486,6 +1486,7 @@ dependencies = [
  "ctrlc",
  "dashmap",
  "lazy_static",
+ "parking_lot",
  "poise",
  "rand",
  "regex",
@@ -1496,6 +1497,8 @@ dependencies = [
  "songbird",
  "symphonia",
  "tokio",
+ "tracing",
+ "tracing-futures",
 ]
 
 [[package]]
