@@ -9,7 +9,7 @@ use tokio::time::error::Elapsed;
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{event_handler::track_event_handler::TrackEndNotifier, GuildQueueKey};
+use crate::{event_handler::track_event_handler::TrackEndNotifier, utils::guild_queue::GuildQueue, GuildQueueKey};
 
 #[derive(Debug)]
 pub enum ConnectionErrorCode {
@@ -62,11 +62,6 @@ pub async fn establish_connection(ctx: &Context, command: &CommandInteraction) -
         } else {
             match manager.join(guild_id, user_channel).await {
                 Ok(handler_lock) => {
-                    let guild_queue_map = {
-                        let data_read = ctx.data.read().await;
-                        data_read.get::<GuildQueueKey>().unwrap().clone()
-                    };
-                    guild_queue_map.insert(guild_id.clone(), Arc::new(TrackQueue::new()));
                     let mut handler = handler_lock.lock().await;
                     handler.add_global_event(TrackEvent::End.into(), TrackEndNotifier);
                     Ok(ConnectionSuccessCode::NewConnection)

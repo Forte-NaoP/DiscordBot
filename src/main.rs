@@ -10,16 +10,13 @@ use serenity::model::prelude::GatewayIntents;
 use reqwest::Client as HttpClient;
 
 use dashmap::DashMap;
+use utils::guild_queue::GuildQueue;
 
 mod event_handler;
 mod command_handler;
 mod connection_handler;
 mod utils;
 mod global;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
-pub struct Data {}
 
 struct HttpKey;
 impl TypeMapKey for HttpKey {
@@ -28,7 +25,7 @@ impl TypeMapKey for HttpKey {
 
 struct GuildQueueKey;
 impl TypeMapKey for GuildQueueKey {
-    type Value = Arc<DashMap<GuildId, Arc<TrackQueue>>>;
+    type Value = Arc<DashMap<GuildId, Arc<GuildQueue>>>;
 }
 
 #[tokio::main]

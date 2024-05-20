@@ -14,7 +14,9 @@ use crate::{
     command_handler::{
         command_handler::*,
         command_return::CommandReturn,
-    }, connection_handler::*, utils::{url_checker::url_checker, youtube_dl::ytdl_optioned}, GuildQueueKey, HttpKey
+    }, 
+    connection_handler::*, 
+    utils::{url_checker::url_checker, youtube_dl::ytdl_optioned, guild_queue::get_guild_queue},
 };
 
 use std::{collections::HashMap, io::Read, path::PathBuf, sync::Arc};
@@ -70,15 +72,7 @@ impl CommandInterface for Play {
         };
 
         let guild_id = command.guild_id.unwrap();
-
-        let guild_queue = {
-            let guild_queue_map = {
-                let data_read = ctx.data.read().await;
-                data_read.get::<GuildQueueKey>().unwrap().clone()
-            };
-            let guild_queue = guild_queue_map.get(&guild_id).unwrap().clone();
-            guild_queue
-        };
+        let guild_queue = get_guild_queue(ctx, guild_id).await;
 
         let manager = songbird::get(ctx).await.unwrap().clone();
         if let Some(handler_lock) = manager.get(guild_id) {
