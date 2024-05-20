@@ -48,7 +48,8 @@ lazy_static! {
         commands: HashMap::from([
             ("join", connect::command()),
             ("leave", disconnect::command()),
-            ("play", play::command())
+            ("play", play::command()),
+            ("regchan", register_channel::command())
         ])
     };
 }
