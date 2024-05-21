@@ -141,12 +141,6 @@ pub async fn execute_command(ctx: Arc<serenity::Context>, command: CommandIntera
             
             
         }
-        CommandReturn::ControlInteraction(mut pages) => {          
-            if let Err(why) = pages.control_interaction(ctx, command).await {
-                println!("an error occured while handling embed pages.");
-                println!("{:#?}", why);
-            }
-        }
         _ => command.delete_response(&ctx.http).await.unwrap(),
     }
 

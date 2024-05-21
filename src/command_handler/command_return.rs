@@ -12,7 +12,6 @@ pub enum CommandReturn {
     String(String),
     SingleEmbed(CreateEmbed),
     SongInfoEmbed(TrackHandle, Output),
-    ControlInteraction(Box<dyn ControlInteraction + Send + Sync>),
     None,
 }
 
