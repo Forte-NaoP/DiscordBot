@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use poise::serenity_prelude as serenity;
 use serenity::{
     async_trait, CreateCommand, Context, CommandInteraction, CommandDataOption, 
-    CreateCommandOption, CommandOptionType, GuildId
+    CreateCommandOption, CommandOptionType, GuildId, CreateEmbed
 };
 use songbird::{
     input::{File, Input},
@@ -20,6 +20,8 @@ use crate::{
 };
 
 use std::{collections::HashMap, io::Read, path::PathBuf, sync::Arc};
+
+use chrono::Utc;
 
 struct Play;
 
@@ -101,7 +103,13 @@ impl CommandInterface for Play {
                 None => guild_queue.add_source(src.into(), &mut handler).await,
             };
             guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), &mut handler).await;
-            CommandReturn::SongInfoEmbed(handle, meta)
+            
+            let after = Utc::now().timestamp() + meta.duration.unwrap();
+            let embed = CreateEmbed::default()
+                .title(meta.title.unwrap().to_owned())
+                .description(format!("<t:{}:R>", after));
+            CommandReturn::SingleEmbed(embed)
+            // CommandReturn::SongInfoEmbed(handle, meta)
         } else {
             CommandReturn::String("재생 실패".to_owned())
         }
