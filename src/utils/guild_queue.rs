@@ -22,14 +22,14 @@ pub struct GuildQueue {
     inner: Arc<Mutex<GuildQueueCore>>,
 }
 
-pub async fn get_guild_queue(ctx: &Context, guild_id: GuildId) -> Arc<GuildQueue> {
+pub async fn get_guild_queue(ctx: &Context, guild_id: GuildId) -> GuildQueue {
     let guild_queue_map = {
         let data_read = ctx.data.read().await;
         data_read.get::<GuildQueueKey>().unwrap().clone()
     };
     let guild_queue = guild_queue_map
         .entry(guild_id)
-        .or_insert_with(|| Arc::new(GuildQueue::new()))
+        .or_insert_with(|| GuildQueue::new())
         .clone();
     guild_queue
 }
