@@ -41,13 +41,14 @@ impl EventHandler for DiscordEventHandler {
         let guild_id = msg.guild_id.unwrap();
         let guild_queue = get_guild_queue(&ctx, guild_id).await;
         
-        if let Some(channel) = guild_queue.channel() {
-            if channel == msg.channel_id.into() {
-                if let Some((_, Some(word))) = guild_queue.current() {
-                    if word == msg.content.trim() {
-                        guild_queue.skip().unwrap();
-                    }
-                }
+        if let Some(channel) = guild_queue.channel()
+            .filter(|channel| *channel == msg.channel_id.into())
+        {
+            if let Some((_, Some(keyword))) = guild_queue.current()
+                .map(|(_, meta)| ((), meta.keyword))
+                .filter(|(_, kw)| kw.as_ref().map_or(false, |kw| kw == msg.content.trim()))
+            {
+                guild_queue.skip().unwrap();
             }
         }
     }

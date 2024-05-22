@@ -10,13 +10,10 @@ use songbird::{
 };
 
 use crate::{
-    global::*,
     command_handler::{
         command_handler::*,
         command_return::CommandReturn,
-    }, 
-    connection_handler::*, 
-    utils::{url_checker::url_checker, youtube_dl::ytdl_optioned, guild_queue::get_guild_queue},
+    }, connection_handler::*, global::*, utils::{guild_queue::get_guild_queue, url_checker::url_checker, youtube_dl::{ytdl_optioned, MetaData}}
 };
 
 use std::{collections::HashMap, io::Read, path::PathBuf, sync::Arc};
@@ -35,6 +32,12 @@ lazy_static! {
         let mut buffer = Vec::new();
         f.read_to_end(&mut buffer).unwrap();
         buffer
+    };
+
+    static ref INTERVAL_META: MetaData = MetaData {
+        duration: Some(5),
+        title: Some("interval".to_owned()),
+        keyword: None,
     };
 }
 
@@ -89,27 +92,21 @@ impl CommandInterface for Play {
             }
         }
 
-
         let guild_id = command.guild_id.unwrap();
         let guild_queue = get_guild_queue(ctx, guild_id).await;
 
         let manager = songbird::get(ctx).await.unwrap().clone();
         if let Some(handler_lock) = manager.get(guild_id) {
-            let (path, meta) = ytdl_optioned(&url, start, duration).await.unwrap();
+            let (path, output) = ytdl_optioned(&url, start, duration).await.unwrap();
             let src = File::new(path);
             let mut handler = handler_lock.lock().await;
-            let handle = match skip {
-                Some(skip) => guild_queue.add_source_with_word(src.into(), skip, &mut handler).await,
-                None => guild_queue.add_source(src.into(), &mut handler).await,
-            };
-            guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), &mut handler).await;
+            let mut meta: MetaData = output.into();
+            meta.keyword = skip;
             
-            let after = Utc::now().timestamp() + meta.duration.unwrap();
-            let embed = CreateEmbed::default()
-                .title(meta.title.unwrap().to_owned())
-                .description(format!("<t:{}:R>", after));
-            CommandReturn::SingleEmbed(embed)
-            // CommandReturn::SongInfoEmbed(handle, meta)
+            let handle = guild_queue.add_source(src.into(), meta, &mut handler).await;
+            guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), INTERVAL_META.clone(), &mut handler).await;
+            
+            CommandReturn::String("큐에 추가됨".to_owned())
         } else {
             CommandReturn::String("재생 실패".to_owned())
         }

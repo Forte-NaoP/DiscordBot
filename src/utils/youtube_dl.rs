@@ -13,7 +13,33 @@ use crate::global::*;
 
 const YOUTUBE_DL_COMMAND: &str = "yt-dlp";
 const FFMPEG_COMMAND: &str = "ffmpeg";
-// "yt-dlp "https://www.youtube.com/watch?v=KIiO7rGnW6I&list=PLy8FIz514mc8kUd6irZ3_djzblgBmuajc&index=129" -f "ba[abr>0][vcodec=none]/best" --no-playlist --downloader ffmpeg --downloader-args ffmpeg:"-ss 30 -t 30""
+
+#[derive(Debug, Clone)]
+pub struct MetaData {
+    pub duration: Option<i64>,
+    pub title: Option<String>,
+    pub keyword: Option<String>,
+}
+
+impl From<&Output> for MetaData {
+    fn from(output: &Output) -> Self {
+        MetaData {
+            duration: output.duration,
+            title: output.title.clone(),
+            keyword: None,
+        }
+    }
+}
+
+impl From<Output> for MetaData {
+    fn from(output: Output) -> Self {
+        MetaData {
+            duration: output.duration,
+            title: output.title,
+            keyword: None,
+        }
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Output {
