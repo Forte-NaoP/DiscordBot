@@ -9,10 +9,8 @@ use crate::{
         command_handler::*,
         command_return::CommandReturn,
     }, 
-    utils::{guild_queue::get_guild_queue, board::get_board}
+    utils::guild_queue::get_guild_queue
 };
-
-use std::{any::Any, collections::HashMap, io::Read, path::PathBuf, sync::Arc};
 
 struct Register;
 
@@ -40,10 +38,7 @@ impl CommandInterface for Register {
 
         let guild_id = command.guild_id.unwrap();
         let guild_queue = get_guild_queue(ctx, guild_id).await;
-        guild_queue.register_channel(channel.id.into());
-
-        let mut board = get_board(ctx, guild_id).await;
-        board.set(&ctx, channel.clone()).await;
+        guild_queue.register_channel(&channel).await;
 
         CommandReturn::String(format!("{} 등록됨", channel.mention()))
     }

@@ -2,22 +2,25 @@ use songbird::{
     driver::Driver,
     events::{Event, EventContext, EventData, EventHandler, TrackEvent},
     input::Input,
-    tracks::{Track, TrackHandle, TrackResult},
+    tracks::{Track, TrackHandle, TrackResult, TrackQueue},
     id::ChannelId,
 };
 
 use poise::serenity_prelude as serenity;
-use serenity::{async_trait, Context, GuildId};
+use serenity::{async_trait, Context, GuildId, GuildChannel, Http};
 
 use crate::GuildQueueKey;
+use crate::utils::youtube_dl::MetaData;
 
 use tracing::{info, warn};
 use parking_lot::Mutex;
 use std::{collections::VecDeque, ops::Deref, sync::Arc, time::Duration};
 
+use super::board::Board;
+
 // Modified copy from songbird/src/tracks/queue.rs
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct GuildQueue {
     inner: Arc<Mutex<GuildQueueCore>>,
 }
@@ -29,7 +32,7 @@ pub async fn get_guild_queue(ctx: &Context, guild_id: GuildId) -> GuildQueue {
     };
     let guild_queue = guild_queue_map
         .entry(guild_id)
-        .or_insert_with(|| GuildQueue::new())
+        .or_insert_with(|| GuildQueue::new(ctx.http.clone()))
         .clone();
     guild_queue
 }
@@ -53,10 +56,13 @@ impl Queued {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GuildQueueCore {
-    tracks: VecDeque<(Queued, Option<String>)>,
-    channel: Option<ChannelId>
+    // Track Queue
+    tracks: VecDeque<(Queued, MetaData)>,
+    // bot only reads the messages from this channel 
+    channel: Option<ChannelId>,
+    board: Arc<tokio::sync::Mutex<Board>>,
 }
 
 struct QueueHandler {
@@ -66,39 +72,47 @@ struct QueueHandler {
 #[async_trait]
 impl EventHandler for QueueHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
-        let mut inner = self.remote_lock.lock();
+        let (board_lock, meta) = {
+            let mut inner = self.remote_lock.lock();
 
-        // Due to possibility that users might remove, reorder,
-        // or dequeue+stop tracks, we need to verify that the FIRST
-        // track is the one who has ended.
-        match ctx {
-            EventContext::Track(ts) => {
-                // This slice should have exactly one entry.
-                // If the ended track has same id as the queue head, then
-                // we can progress the queue.
-                if inner.tracks.front()?.0.uuid() != ts.first()?.1.uuid() {
-                    return None;
-                }
-            },
-            _ => return None,
-        }
-
-        let _old = inner.tracks.pop_front();
-
-        info!("Queued track ended: {:?}.", ctx);
-        info!("{} tracks remain.", inner.tracks.len());
-
-        // Keep going until we find one track which works, or we run out.
-        while let Some(new) = inner.tracks.front() {
-            if new.0.play().is_err() {
-                // Discard files which cannot be used for whatever reason.
-                warn!("Track in Queue couldn't be played...");
-                inner.tracks.pop_front();
-            } else {
-                break;
+            // Due to possibility that users might remove, reorder,
+            // or dequeue+stop tracks, we need to verify that the FIRST
+            // track is the one who has ended.
+            match ctx {
+                EventContext::Track(ts) => {
+                    // This slice should have exactly one entry.
+                    // If the ended track has same id as the queue head, then
+                    // we can progress the queue.
+                    if inner.tracks.front()?.0.uuid() != ts.first()?.1.uuid() {
+                        return None;
+                    }
+                },
+                _ => return None,
             }
-        }
 
+            let _old = inner.tracks.pop_front();
+
+            info!("Queued track ended: {:?}.", ctx);
+            info!("{} tracks remain.", inner.tracks.len());
+
+            // Keep going until we find one track which works, or we run out.
+            loop {
+                match inner.tracks.front() {
+                    Some(new) => {
+                        if new.0.play().is_err() {
+                            // Discard files which cannot be used for whatever reason.
+                            warn!("Track in Queue couldn't be played...");
+                            inner.tracks.pop_front();
+                        } else {
+                            break (inner.board.clone(), new.1.clone());
+                        }
+                    },
+                    None => return None,
+                }
+            }
+        };
+        let mut board = board_lock.lock().await;
+        board.edit(meta).await;
         None
     }
 }
@@ -125,22 +139,26 @@ impl EventHandler for SongPreloader {
 impl GuildQueue {
     /// Create a new, empty, track queue.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(http: Arc<Http>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(GuildQueueCore {
                 tracks: VecDeque::new(),
-                channel: None
+                channel: None,
+                board: Arc::new(tokio::sync::Mutex::new(Board::new(http))),
             })),
         }
     }
 
-    pub fn register_channel(&self, channel: ChannelId) {
-        let mut inner = self.inner.lock();
-        inner.channel = Some(channel);
-    }
-
-    pub async fn add_source_with_word(&self, input: Input, word: String, driver: &mut Driver) -> TrackHandle {
-        self.add(input.into(), Some(word), driver).await
+    pub async fn register_channel(&self, channel: &GuildChannel) {
+        let board_lock = {
+            let mut inner = self.inner.lock();
+            let channel_id = channel.id.into();
+            inner.channel = Some(channel_id);
+            inner.board.clone()
+        };
+        
+        let mut board = board_lock.lock().await;
+        board.set(channel).await;
     }
 
     /// Adds an audio source to the queue, to be played in the channel managed by `driver`.
@@ -149,8 +167,8 @@ impl GuildQueue {
     /// the [`AuxMetadata`] can be successfully queried for a [`Duration`].
     ///
     /// [`AuxMetadata`]: crate::input::AuxMetadata
-    pub async fn add_source(&self, input: Input, driver: &mut Driver) -> TrackHandle {
-        self.add(input.into(), None, driver).await
+    pub async fn add_source(&self, input: Input, meta: MetaData, driver: &mut Driver) -> TrackHandle {
+        self.add(input.into(), meta, driver).await
     }
 
     /// Adds a [`Track`] object to the queue, to be played in the channel managed by `driver`.
@@ -162,9 +180,9 @@ impl GuildQueue {
     /// the [`AuxMetadata`] can be successfully queried for a [`Duration`].
     ///
     /// [`AuxMetadata`]: crate::input::AuxMetadata
-    pub async fn add(&self, mut track: Track, word: Option<String>, driver: &mut Driver) -> TrackHandle {
+    pub async fn add(&self, mut track: Track, meta: MetaData, driver: &mut Driver) -> TrackHandle {
         let preload_time = Self::get_preload_time(&mut track).await;
-        self.add_with_preload(track, word, driver, preload_time)
+        self.add_with_preload(track, meta, driver, preload_time)
     }
 
     pub(crate) async fn get_preload_time(track: &mut Track) -> Option<Duration> {
@@ -192,7 +210,7 @@ impl GuildQueue {
     pub fn add_with_preload(
         &self,
         mut track: Track,
-        word: Option<String>,
+        meta: MetaData,
         driver: &mut Driver,
         preload_time: Option<Duration>,
     ) -> TrackHandle {
@@ -219,7 +237,7 @@ impl GuildQueue {
             let mut inner = self.inner.lock();
 
             let handle = driver.play(track.pause());
-            inner.tracks.push_back((Queued(handle.clone()), word));
+            inner.tracks.push_back((Queued(handle.clone()), meta));
 
             (inner.tracks.len() == 1, handle)
         };
@@ -233,7 +251,7 @@ impl GuildQueue {
 
     /// Returns a handle to the currently playing track.
     #[must_use]
-    pub fn current(&self) -> Option<(TrackHandle, Option<String>)> {
+    pub fn current(&self) -> Option<(TrackHandle, MetaData)> {
         let inner = self.inner.lock();
 
         inner.tracks.front().map(|f| (f.0.handle(), f.1.clone()))
@@ -271,7 +289,7 @@ impl GuildQueue {
     /// resource leaks.
     pub fn modify_queue<F, O>(&self, func: F) -> O
     where
-        F: FnOnce(&mut VecDeque<(Queued, Option<String>)>) -> O,
+        F: FnOnce(&mut VecDeque<(Queued, MetaData)>) -> O,
     {
         let mut inner = self.inner.lock();
         func(&mut inner.tracks)
@@ -325,7 +343,7 @@ impl GuildQueue {
     ///
     /// [`modify_queue`]: TrackQueue::modify_queue
     #[must_use]
-    pub fn current_queue(&self) -> Vec<(TrackHandle, Option<String>)> {
+    pub fn current_queue(&self) -> Vec<(TrackHandle, MetaData)> {
         let inner = self.inner.lock();
 
         inner.tracks.iter().map(|e| (e.0.handle(), e.1.clone())).collect()
