@@ -16,10 +16,6 @@ create_stream에서 resume를 이용해서 계속 파일을 받아오는 것 같
 
 
 --- 
-24-05-22
 
-`util::youtube_dl.rs` 주의점
-
-- `start`와 `duration`의 범위 처리가 되어있지않음
 
 
