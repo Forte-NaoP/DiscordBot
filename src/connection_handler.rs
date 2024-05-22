@@ -61,9 +61,9 @@ pub async fn establish_connection(ctx: &Context, command: &CommandInteraction) -
             }
         } else {
             match manager.join(guild_id, user_channel).await {
-                Ok(handler_lock) => {
-                    let mut handler = handler_lock.lock().await;
-                    handler.add_global_event(TrackEvent::End.into(), TrackEndNotifier);
+                Ok(_/*handler_lock*/) => {
+                    // let mut handler = handler_lock.lock().await;
+                    // handler.add_global_event(TrackEvent::End.into(), TrackEndNotifier);
                     Ok(ConnectionSuccessCode::NewConnection)
                 },
                 Err(why) => Err(ConnectionErrorCode::JoinError(why))
