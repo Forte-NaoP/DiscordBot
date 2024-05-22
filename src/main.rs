@@ -8,11 +8,9 @@ use poise::serenity_prelude as serenity_poise;
 use serenity::model::prelude::GatewayIntents;
 
 use reqwest::Client as HttpClient;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter, FmtSubscriber};
 use dashmap::DashMap;
-use utils::{board::Board, guild_queue::GuildQueue};
-
-use crate::utils::board::get_board;
+use utils::guild_queue::GuildQueue;
 
 mod event_handler;
 mod command_handler;
@@ -20,26 +18,19 @@ mod connection_handler;
 mod utils;
 mod global;
 
-struct HttpKey;
-impl TypeMapKey for HttpKey {
-    type Value = HttpClient;
-}
-
 struct GuildQueueKey;
 impl TypeMapKey for GuildQueueKey {
     type Value = Arc<DashMap<GuildId, GuildQueue>>;
 }
 
-struct BoardKey;
-impl TypeMapKey for BoardKey {
-    type Value = Arc<DashMap<GuildId, Board>>;
-}
-
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::registry()
-        .with(EnvFilter::new("info"))
-        .init();
+    let subscriber = FmtSubscriber::builder()
+        .with_env_filter(EnvFilter::new("info"))
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Setting default subscriber failed");
+
     let token = std::env::var("DISCORD_TOKEN")
         .expect("Missing `DISCORD_TOKEN` env var, see README for more information.");
     let intents = GatewayIntents::GUILDS
@@ -53,9 +44,7 @@ async fn main() {
 
     let mut client: serenity::prelude::Client = serenity_poise::ClientBuilder::new(token, intents)
         .event_handler(event_handler::event_handler::DiscordEventHandler)
-        .type_map_insert::<HttpKey>(HttpClient::new())
         .type_map_insert::<GuildQueueKey>(Arc::new(DashMap::new()))
-        .type_map_insert::<BoardKey>(Arc::new(DashMap::new()))
         .register_songbird()
         .await
         .expect("Error creating client");
