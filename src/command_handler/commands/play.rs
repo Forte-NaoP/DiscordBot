@@ -103,8 +103,8 @@ impl CommandInterface for Play {
             let mut meta: MetaData = output.into();
             meta.keyword = skip;
             
-            let handle = guild_queue.add_source(src.into(), meta, &mut handler).await;
             guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), INTERVAL_META.clone(), &mut handler).await;
+            guild_queue.add_source(src.into(), meta, &mut handler).await;
             
             CommandReturn::String("큐에 추가됨".to_owned())
         } else {
