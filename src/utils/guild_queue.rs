@@ -104,15 +104,15 @@ impl EventHandler for QueueHandler {
                             warn!("Track in Queue couldn't be played...");
                             inner.tracks.pop_front();
                         } else {
-                            break (inner.board.clone(), new.1.clone());
+                            break (inner.board.clone(), Some(new.1.clone()));
                         }
                     },
-                    None => return None,
+                    None => break (inner.board.clone(), None),
                 }
             }
         };
         let mut board = board_lock.lock().await;
-        board.edit(meta).await;
+        board.edit_status(meta).await;
         None
     }
 }
@@ -159,6 +159,11 @@ impl GuildQueue {
         
         let mut board = board_lock.lock().await;
         board.set(channel).await;
+    }
+
+    pub fn get_board(&self) -> Arc<tokio::sync::Mutex<Board>> {
+        let inner = self.inner.lock();
+        inner.board.clone()
     }
 
     /// Adds an audio source to the queue, to be played in the channel managed by `driver`.

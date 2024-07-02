@@ -5,15 +5,18 @@ use serenity::{
     Http, ChannelType, Message, GuildChannel, GuildId, CreateThread, CreateMessage, CreateEmbed, CacheHttp
 };
 
+use std::mem;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use super::youtube_dl::MetaData;
 
 #[derive(Clone, Debug)]
 pub struct Board {
     thread: Option<GuildChannel>,
-    score: Option<Message>,
-    status: Option<Message>,
+    score_message: Option<Message>,
+    status_message: Option<Message>,
+    score: HashMap<String, i32>,
     http: Arc<Http>
 }
 
@@ -21,8 +24,9 @@ impl Board {
     pub fn new(http: Arc<Http>) -> Self {
         Self {
             thread: None,
-            score: None,
-            status: None,
+            score_message: None,
+            status_message: None,
+            score: HashMap::new(),
             http
         }
     }
@@ -30,8 +34,8 @@ impl Board {
     pub async fn delete(&mut self) {
         if let Some(thread) = self.thread.take() {
             thread.delete(&self.http).await.unwrap();
-            self.score = None;
-            self.status = None;
+            self.score_message = None;
+            self.status_message = None;
         }
     }
 
@@ -57,26 +61,67 @@ impl Board {
             .unwrap();
 
         self.thread = Some(thread_channel);
-        self.score = Some(score);
-        self.status = Some(status);
+        self.score_message = Some(score);
+        self.status_message = Some(status);
     }
 
-    pub async fn edit(&mut self, meta: MetaData) {
-        if let Some(score) = &mut self.score {
+    pub async fn edit_score(&mut self) {
+        if let Some(score) = &mut self.score_message {
+            let mut score_vec: Vec<(i32, String)> = self.score.iter().map(|(k, &v)| (v, k.clone())).collect();
+            score_vec.sort_by(|a, b| b.0.cmp(&a.0));
+            let score_text = score_vec.iter().map(|(v, k)| format!("{}: {}", k, v)).collect::<Vec<String>>().join("\n");
             score.edit(&self.http, 
-                EditMessage::new().add_embed(CreateEmbed::new().title("Score").description(""))).await.unwrap();
+                EditMessage::new().add_embed(CreateEmbed::new().title("Score").description(score_text))).await.unwrap();
         }
-        let after = Utc::now().timestamp() + meta.duration.unwrap();
-        if let Some(status) = &mut self.status {
-            status.edit(&self.http, 
-                EditMessage::new().add_embed(
+    }
+
+    pub async fn edit_status(&mut self, meta: Option<MetaData>) {
+        if let Some(status) = &mut self.status_message {
+            let embed = match meta {
+                Some(meta) => {
+                    let after = Utc::now().timestamp() + meta.duration.unwrap();
                     CreateEmbed::new()
                         .title("재생중인 곡")
-                        .description(format!("{}\n<t:{}:R>", meta.title.unwrap(), after))))
+                        .description(format!("{}\n<t:{}:R> 종료", meta.title.unwrap(), after))
+                }, 
+                None => {
+                    CreateEmbed::new().title("재생중인 곡").description("없음")
+                }
+            };
+            status.edit(&self.http, EditMessage::new().add_embed(embed))
                 .await
                 .unwrap();
         }
-        
+    }
+
+    pub async fn add_user(&mut self, member: String) {
+        if self.score.contains_key(&member) {
+            return;
+        }
+        self.score.insert(member, 0);
+        self.edit_score().await;
+    }
+
+    pub async fn add_users(&mut self, members: Vec<String>) {
+        for member in members {
+            if self.score.contains_key(&member) {
+                continue;
+            }
+            self.score.insert(member, 0);
+        }
+        self.edit_score().await;
+    }
+
+    pub async fn add_score(&mut self, member: String) {
+        if let Some(value) = self.score.get_mut(&member) {
+            *value += 1;
+            self.edit_score().await;
+        }
+    }
+
+    pub async fn reset_score(&mut self) {
+        self.score.clear();
+        self.edit_score().await;
     }
 
 }
