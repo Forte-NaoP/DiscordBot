@@ -26,21 +26,6 @@ pub fn command() -> Box<dyn CommandInterface + Sync + Send> {
     Box::new(Play)
 }
 
-lazy_static! {
-    static ref INTERVAL: Vec<u8> = {
-        let mut f = std::fs::File::open(format!("{TARGET}{NO_SOUND}")).unwrap();
-        let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer).unwrap();
-        buffer
-    };
-
-    static ref INTERVAL_META: MetaData = MetaData {
-        duration: Some(5),
-        title: Some("interval".to_owned()),
-        keyword: None,
-    };
-}
-
 #[async_trait]
 impl CommandInterface for Play {
     async fn run(
@@ -103,8 +88,8 @@ impl CommandInterface for Play {
             let mut meta: MetaData = output.into();
             meta.keyword = skip;
             
-            guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), INTERVAL_META.clone(), &mut handler).await;
-            guild_queue.add_source(src.into(), meta, &mut handler).await;
+            // guild_queue.add_source((INTERVAL.as_ref() as &[u8]).into(), INTERVAL_META.clone(), &mut handler).await;
+            guild_queue.add_source(src.into(), meta, &mut handler, true).await;
             
             CommandReturn::String("큐에 추가됨".to_owned())
         } else {

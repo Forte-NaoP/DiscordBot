@@ -9,14 +9,45 @@ use songbird::{
 use poise::serenity_prelude as serenity;
 use serenity::{async_trait, Context, GuildId, GuildChannel, Http};
 
-use crate::GuildQueueKey;
-use crate::utils::youtube_dl::MetaData;
+use crate::{
+    GuildQueueKey,
+    utils::youtube_dl::MetaData,
+    global::*,
+};
 
+use lazy_static::lazy_static;
 use tracing::{info, warn};
 use parking_lot::Mutex;
-use std::{collections::VecDeque, ops::Deref, sync::Arc, time::Duration};
+use std::{collections::VecDeque, ops::Deref, sync::Arc, time::Duration, io::Read, process::Command};
 
 use super::board::Board;
+
+lazy_static! {
+    static ref INTERVAL: Vec<u8> = {
+        let mut f = std::fs::File::open(format!("{TARGET}{NO_SOUND}")).unwrap();
+        let mut buffer = Vec::new();
+        f.read_to_end(&mut buffer).unwrap();
+        buffer
+    };
+
+    static ref INTERVAL_META: MetaData = {
+        let output = Command::new("ffprobe")
+            .args(&[
+                "-i", format!("{TARGET}{NO_SOUND}").as_str(),
+                "-show_entries", "format=duration",
+                "-v", "quiet",
+                "-of", "csv=p=0",
+            ])
+            .output()
+            .expect("ffprobe failed to start");
+        let duration = String::from_utf8(output.stdout).unwrap().trim().parse::<f64>().unwrap() as i64;
+        MetaData {
+            duration: Some(duration),
+            title: Some("interval".to_owned()),
+            keyword: None,
+        }
+    };
+}
 
 // Modified copy from songbird/src/tracks/queue.rs
 
@@ -172,8 +203,8 @@ impl GuildQueue {
     /// the [`AuxMetadata`] can be successfully queried for a [`Duration`].
     ///
     /// [`AuxMetadata`]: crate::input::AuxMetadata
-    pub async fn add_source(&self, input: Input, meta: MetaData, driver: &mut Driver) -> TrackHandle {
-        self.add(input.into(), meta, driver).await
+    pub async fn add_source(&self, input: Input, meta: MetaData, driver: &mut Driver, with_interval: bool) -> TrackHandle {
+        self.add(input.into(), meta, driver, with_interval).await
     }
 
     /// Adds a [`Track`] object to the queue, to be played in the channel managed by `driver`.
@@ -185,9 +216,12 @@ impl GuildQueue {
     /// the [`AuxMetadata`] can be successfully queried for a [`Duration`].
     ///
     /// [`AuxMetadata`]: crate::input::AuxMetadata
-    pub async fn add(&self, mut track: Track, meta: MetaData, driver: &mut Driver) -> TrackHandle {
-        let preload_time = Self::get_preload_time(&mut track).await;
-        self.add_with_preload(track, meta, driver, preload_time)
+    pub async fn add(&self, mut track: Track, meta: MetaData, driver: &mut Driver, with_interval: bool) -> TrackHandle {
+        // preload_time is removed 
+        // because songbird::input::File::aux_metadata is not implemented
+        // so get_preload_time is not alaways return None
+        // let preload_time = Self::get_preload_time(&mut track).await;
+        self.add_with_preload(track, meta, driver, None/*preload_time*/, with_interval)
     }
 
     pub(crate) async fn get_preload_time(track: &mut Track) -> Option<Duration> {
@@ -218,6 +252,7 @@ impl GuildQueue {
         meta: MetaData,
         driver: &mut Driver,
         preload_time: Option<Duration>,
+        with_interval: bool
     ) -> TrackHandle {
         // Attempts to start loading the next track before this one ends.
         // Idea is to provide as close to gapless playback as possible,
@@ -238,13 +273,28 @@ impl GuildQueue {
             );
         }
 
+        // for insert interval between tracks
+        let remote_lock = self.inner.clone();
+        let mut interval = Track::from(INTERVAL.as_ref() as &[u8]);
+        interval.events.add_event(
+            EventData::new(Event::Track(TrackEvent::End), QueueHandler { remote_lock }),
+            Duration::ZERO,
+        );
+
         let (should_play, handle) = {
             let mut inner = self.inner.lock();
 
+            let interval_handle = driver.play(interval.pause());
+            inner.tracks.push_back((Queued(interval_handle.clone()), INTERVAL_META.clone()));
+
             let handle = driver.play(track.pause());
             inner.tracks.push_back((Queued(handle.clone()), meta));
-
-            (inner.tracks.len() == 1, handle)
+            
+            if with_interval {
+                (inner.tracks.len() <= 2, interval_handle)
+            } else {
+                (inner.tracks.len() == 1, handle)
+            }
         };
 
         if should_play {
