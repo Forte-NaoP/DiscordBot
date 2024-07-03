@@ -49,7 +49,8 @@ lazy_static! {
             ("join", connect::command()),
             ("leave", disconnect::command()),
             ("play", play::command()),
-            ("regchan", register_channel::command())
+            ("regchan", register_channel::command()),
+            ("playlist", play_list::command())
         ])
     };
 }
