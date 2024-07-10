@@ -63,7 +63,7 @@ pub async fn ytdl_optioned(
         "--no-simulate",
         url,
         "-f",
-        "ba[abr<=100][vcodec=none]/best",
+        "ba[abr<=128][vcodec=none]/best",
         "--no-playlist",
         "-o",
         ytdl_output.as_str()
@@ -98,7 +98,7 @@ pub async fn ytdl_optioned(
         .filter_map(|x| (!x.is_empty()).then(|| serde_json::from_slice(x)))
         .collect::<Result<Vec<Output>, _>>()
         .map_err(|e| AudioStreamError::Fail(Box::new(e)))?;
-
+    
     let mut meta = out
         .first()
         .ok_or_else(|| {
@@ -106,35 +106,50 @@ pub async fn ytdl_optioned(
         }).unwrap().clone();
     ytdl_output = format!("{TARGET}{TMP}{url}.{}", meta.audio_ext.as_ref().unwrap());
 
-    if duration == 0 {
-        Ok((ytdl_output, meta))
-    } else {
-        let ffmpeg_output = format!("{TARGET}{TMP}{url}_cut.{}", meta.audio_ext.as_ref().unwrap());
-        let ffmpeg_args = [
-            "-y",
-            "-i",
-            ytdl_output.as_str(),
-            "-ss",
-            &start.to_string(),
-            "-t",
-            &duration.to_string(),
-            ffmpeg_output.as_str(),
-        ];
+    let output_full = format!("{TARGET}{TMP}{url}_full.{}", meta.audio_ext.as_ref().unwrap());
+    let mut ffmpeg_args = vec![
+        "-y".to_owned(),
+        "-i".to_owned(),
+        ytdl_output,
+        "-c:a".to_owned(),
+        "libopus".to_owned(),
+        output_full.clone(),
+    ];
+    let mut ffmpeg_output = output_full;
 
-        Command::new(FFMPEG_COMMAND)
-            .args(ffmpeg_args)
-            .output()
-            .await
-            .map_err(|e| {
-                AudioStreamError::Fail(if e.kind() == ErrorKind::NotFound {
-                    format!("could not find executable '{}' on path", FFMPEG_COMMAND).into()
-                } else {
-                    Box::new(e)
-                })
-            })?;
-        meta.duration = Some(duration);
-        Ok((ffmpeg_output, meta))
+    if start != 0 || duration != 0 {
+        let start = start.to_string();
+        let duration = if duration == 0 {
+            meta.duration.unwrap().to_string()
+        } else {
+            meta.duration = Some(duration);
+            duration.to_string()
+        };
+        
+        let output_cut = format!("{TARGET}{TMP}{url}_cut.{}", meta.audio_ext.as_ref().unwrap());
+        ffmpeg_args.extend_from_slice(&[
+            "-ss".to_owned(),
+            start,
+            "-t".to_owned(),
+            duration,
+            "-c:a".to_owned(),
+            "libopus".to_owned(),
+            output_cut.clone(),
+        ]);
+        ffmpeg_output = output_cut;
     }
-
+    Command::new(FFMPEG_COMMAND)
+        .args(ffmpeg_args)
+        .output()
+        .await
+        .map_err(|e| {
+            AudioStreamError::Fail(if e.kind() == ErrorKind::NotFound {
+                format!("could not find executable '{}' on path", FFMPEG_COMMAND).into()
+            } else {
+                Box::new(e)
+            })
+        })?;
+    meta.audio_ext.replace("webm".to_string());
+    Ok((ffmpeg_output, meta))
 }
 
